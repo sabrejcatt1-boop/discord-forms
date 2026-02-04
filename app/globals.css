@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+
+  --bg-base: #050a14;
+  --bg-top: #0d1728;
+  --text-main: #f4f6fb;
+  --text-soft: #c6d0e0;
+  --text-muted: #96a4bb;
+
+  --accent: #2dd4bf;
+  --accent-2: #fb923c;
+  --accent-soft: rgba(45, 212, 191, 0.35);
+  --line-strong: rgba(45, 212, 191, 0.7);
+
+  --grid-line: rgba(255, 255, 255, 0.05);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 10% -20%, rgba(45, 212, 191, 0.25), transparent 48%),
+    radial-gradient(circle at 95% 0%, rgba(251, 146, 60, 0.2), transparent 42%),
+    linear-gradient(180deg, var(--bg-top), var(--bg-base));
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 90px 90px;
+  mask-image: radial-gradient(circle at 50% 10%, black 30%, transparent 86%);
+}
+
+::selection {
+  background: rgba(45, 212, 191, 0.35);
+  color: #041014;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(45, 212, 191, 0.7);
+  outline-offset: 2px;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  animation: fadeUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
