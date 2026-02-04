@@ -21,6 +21,7 @@ if (!globalThis.__rateLimitMap) {
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const MAX_INPUT_LENGTH = 2000;
 
 const REQUIRED_FIELDS = [
   "role",
@@ -65,7 +66,7 @@ const normalize = (value: unknown) =>
 
 const truncate = (value: string, max = 1024) => {
   if (value.length <= max) return value;
-  return value.slice(0, max - 1) + "…";
+  return value.slice(0, max - 3) + "...";
 };
 
 type EmbedField = {
@@ -74,28 +75,17 @@ type EmbedField = {
   inline?: boolean;
 };
 
-const splitFieldsByLength = (fields: EmbedField[], limit = 5500) => {
-  const groups: EmbedField[][] = [];
-  let current: EmbedField[] = [];
-  let total = 0;
+const quoteMultiline = (value: string) =>
+  value
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
 
-  fields.forEach((field) => {
-    const length = field.name.length + field.value.length;
-    if (current.length > 0 && total + length > limit) {
-      groups.push(current);
-      current = [];
-      total = 0;
-    }
-
-    current.push(field);
-    total += length;
-  });
-
-  if (current.length > 0) {
-    groups.push(current);
-  }
-
-  return groups;
+const fieldValue = (value: string, max = 1024) => {
+  if (!value) return "Not provided";
+  return truncate(quoteMultiline(value), max);
 };
 
 export async function POST(request: NextRequest) {
@@ -164,45 +154,78 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const fields: EmbedField[] = REQUIRED_FIELDS.map((key) => ({
-    name: FIELD_LABELS[key],
-    value: truncate(values[key]) || "Not provided",
-    inline: false
-  }));
-
-  fields.push({
-    name: "Optional contact",
-    value: contact ? truncate(contact) : "Not provided",
-    inline: false
-  });
+  const tooLong = REQUIRED_FIELDS.some((key) => values[key].length > MAX_INPUT_LENGTH);
+  if (tooLong || contact.length > 200) {
+    return NextResponse.json(
+      { ok: false, error: "One or more answers are too long." },
+      { status: 400 }
+    );
+  }
 
   const id = Math.random().toString(36).slice(2, 8).toUpperCase();
   const timestamp = new Date().toISOString();
-  const footerText = `ID: ${id} • ${timestamp.replace("T", " ").replace("Z", " UTC")}`;
+  const footerText = `ID: ${id} | ${timestamp.replace("T", " ").replace("Z", " UTC")}`;
 
-  const fieldGroups = splitFieldsByLength(fields, 5500).slice(0, 2);
+  const summaryFields: EmbedField[] = [
+    { name: FIELD_LABELS.role, value: truncate(values.role, 256), inline: true },
+    { name: FIELD_LABELS.stuckOn, value: truncate(values.stuckOn, 256), inline: true },
+    { name: FIELD_LABELS.benefit, value: truncate(values.benefit, 256), inline: true },
+    { name: FIELD_LABELS.pay, value: truncate(values.pay, 256), inline: true },
+    {
+      name: "Optional contact",
+      value: contact ? truncate(contact, 256) : "Not provided",
+      inline: true
+    }
+  ];
 
-  const embeds = fieldGroups.map((group, index) => ({
-    title:
-      index === 0 ? "New Survey Response" : "New Survey Response (cont.)",
-    color: 0x22d3ee,
-    fields: group,
-    timestamp,
-    ...(index === fieldGroups.length - 1
-      ? { footer: { text: footerText } }
-      : {})
-  }));
+  const detailFields: EmbedField[] = [
+    { name: FIELD_LABELS.frustration, value: fieldValue(values.frustration), inline: false },
+    { name: FIELD_LABELS.triedTools, value: fieldValue(values.triedTools), inline: false },
+    { name: FIELD_LABELS.wantHelp, value: fieldValue(values.wantHelp), inline: false },
+    { name: FIELD_LABELS.dealbreaker, value: fieldValue(values.dealbreaker), inline: false },
+    { name: FIELD_LABELS.magic, value: fieldValue(values.magic), inline: false }
+  ];
 
-  const discordResponse = await fetch(webhookUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
+  const embeds = [
+    {
+      title: "New Founder Survey Response",
+      color: 0x22d3ee,
+      description:
+        "A new submission is in. Quick summary is below, with full answers in the next embed.",
+      fields: summaryFields,
+      timestamp
     },
-    body: JSON.stringify({
-      content: "",
-      embeds
-    })
-  });
+    {
+      title: "Full Responses",
+      color: 0x14b8a6,
+      fields: detailFields,
+      timestamp,
+      footer: { text: footerText }
+    }
+  ];
+
+  let discordResponse: Response;
+  try {
+    discordResponse = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        content: "@here New survey response received.",
+        allowed_mentions: {
+          parse: ["everyone"]
+        },
+        embeds,
+        username: "Founder Survey Bot"
+      })
+    });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Unable to reach Discord right now." },
+      { status: 502 }
+    );
+  }
 
   if (!discordResponse.ok) {
     return NextResponse.json(
